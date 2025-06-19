@@ -765,6 +765,13 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
             params.force = true;
         }
     ).set_env("LLAMA_ARG_FORCE"));
+    add_opt(llama_arg(
+        {"--master-priority"}, "N",
+        format("priority to assign workload to the master (default: %f, set 1.01 to use master first, and 0.99 to offload to other devices)", params.master_priority),
+        [](gpt_params & params, const std::string & value) {
+            params.master_priority = std::stof(value);
+        }
+    ).set_env("LLAMA_ARG_MASTER_PRIORITY"));
 // #ifdef GGML_USE_METAL
 //     // warn: if the output layer weights are not kept in metal shared memory, its mmap-ed weight data
 //     // could be released by the OS and reloaded repeatedly, which causes additional disk I/O latency.

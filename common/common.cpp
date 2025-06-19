@@ -1053,7 +1053,7 @@ static bool assign_layers_to_device(
             GGML_ASSERT(!is_windows && "Windows is not tested yet\n");
 
             bool use_gpu = dev.gpu_support.metal || dev.gpu_support.cuda;
-            llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, use_gpu, m == 0, w[m] * k, n[m] * k);
+            llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, use_gpu, m == 0, dev_info_set[0].model_bytes, w[m] > n[m]);
 
             int  l_m          = w[m] * k;  // total number of layers assigned to device m
             int  l_m_gpu      = n[m] * k;  // number of layers assigned to device m that run on GPU
@@ -1248,10 +1248,8 @@ static bool assign_layers_to_device(
                     return cost * k;
                 }
             );
-            // apply higher priority to the head device, here 0.99 is a heuristic value
-            // to ensure that small models in homogeneous clusters result in 32:0 partitioning,
-            // rather than 1:31.
-            model.lp_.col_cost_[0] *= 0.99;
+            // apply priority to the head device
+            model.lp_.col_cost_[0] *= 1.0 / cparams.master_priority;
 
             // define the variable bounds
             model.lp_.col_lower_ = std::vector<double>(n_world * 2, 0.0);
@@ -1524,7 +1522,7 @@ static bool assign_layers_to_device(
     for (uint32_t m = 0; m < n_world; ++m) {
         const device_info & dev = dev_info_set[m];
         bool use_gpu = dev.gpu_support.metal || dev.gpu_support.cuda;
-        llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, use_gpu, m == 0, w[m], n[m]);
+        llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, use_gpu, m == 0, dev_info_set[0].model_bytes);
 
         if (dev.gpu_support.cuda || dev.gpu_support.metal) {
             int64_t required_mem = w[m] * b_prime;
@@ -2024,6 +2022,7 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     cparams.rank              = params.rank;
     cparams.prefetch          = params.prefetch;
     cparams.force             = params.force;
+    cparams.master_priority   = params.master_priority;
     cparams.keep_out_in_metal = params.keep_out_in_metal;
     cparams.n_gpu_layers      = params.n_gpu_layers;
     cparams.n_cycles          = params.n_cycles;

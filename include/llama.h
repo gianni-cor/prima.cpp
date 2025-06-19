@@ -327,6 +327,7 @@ extern "C" {
         uint32_t    n_cycles;          // number of cycles to output one token
         bool        prefetch;          // whether to prefetch layer weights
         bool        force;             // force to start prefetching after computation
+        float       master_priority;   // priority to assign workload to the master (set 1.01 to use master first, and 0.99 to offload to other devices)
         bool        keep_out_in_metal; // whether to keep output weights in metal memory
         char *      master_ip;         // ip address of the master node
         char *      next_node_ip;      // ip address of the next node
@@ -575,8 +576,8 @@ extern "C" {
          const struct llama_context_params   cparams, 
                                       bool   use_gpu,
                                       bool   is_master,
-                                       int   n_layers,
-                                       int   n_gpu_layers);
+                        struct model_bytes   n_bytes,
+                                      bool   offload);
 
     // Return the size of KV cache in the model
     LLAMA_API void llama_total_kv_size(

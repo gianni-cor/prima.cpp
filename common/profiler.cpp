@@ -1603,10 +1603,10 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
 
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
     llama_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, true);
-    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, true,  true, n_layers, n_gpu_layers);
+    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, true,  true, n_bytes, n_layers > n_gpu_layers);
 #else
     llama_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, false);
-    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, false, true, n_layers, n_gpu_layers);
+    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, false, true, n_bytes, n_layers > n_gpu_layers);
 #endif
 
     double cpu_kv_size_gib     = static_cast<double>(cpu_kv_size) / 1024.0 / 1024.0 / 1024.0;     // convert to GiB

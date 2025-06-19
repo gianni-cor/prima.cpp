@@ -3679,6 +3679,8 @@ void llama_profile_device(
     dev_info->gpu_props.cuda_read_vram_bw   = device_cuda_read_vram_bw();
     dev_info->gpu_props.metal_mem_cpy_delay = device_metal_mem_copy(model);
     dev_info->gpu_props.cuda_mem_cpy_delay  = device_cuda_mem_copy(model);
+#else
+    (void)gpu_mem;
 #endif
 
     if (is_dtype_exist(n_params, GGML_TYPE_F32)) {
@@ -20263,6 +20265,7 @@ struct llama_context_params llama_context_default_params() {
         /*.n_cycles                    =*/ 0,
         /*.prefetch                    =*/ false,
         /*.force                       =*/ false,
+        /*.master_priority             =*/ 1.01,
         /*.keep_out_in_metal           =*/ true,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
@@ -21860,8 +21863,8 @@ void llama_model_compute_buf_size(
    const struct llama_context_params   cparams,
                                 bool   use_gpu,
                                 bool   is_master,
-                                 int   n_layers,
-                                 int   n_gpu_layers) {
+                  struct model_bytes   n_bytes,
+                                bool   offload) {
     const llama_hparams hparams = model->hparams;
 
     // input tensors
@@ -21872,34 +21875,61 @@ void llama_model_compute_buf_size(
     const int64_t n_bak_embd = hparams.n_embd  * cparams.n_ubatch;
     const int64_t n_inp_pos  = cparams.n_ubatch;
     const int64_t n_kq_mask  = cparams.n_ctx   * cparams.n_ubatch;
-    const int64_t n_inp_out_ids = cparams.n_ubatch;
     const int64_t n_norm     = hparams.n_embd  * cparams.n_ubatch;
-    const int64_t n_qcur     = hparams.n_embd  * cparams.n_ubatch * 2;
-    const int64_t n_kq       = cparams.n_ctx   * cparams.n_ubatch * hparams.n_head();
+    const int64_t n_qcur     = hparams.n_embd  * cparams.n_ubatch;
+    const int64_t n_ffn_gate = hparams.n_ff()  * cparams.n_ubatch;
+    const int64_t n_ffn_up   = hparams.n_ff()  * cparams.n_ubatch;
+    const int64_t n_inp_out_ids = cparams.n_ubatch;
 
     // outputs
     const int64_t n_out_embd = hparams.n_embd  * cparams.n_ubatch;
-    const int64_t n_output   = hparams.n_vocab * cparams.n_ubatch;
+    const int64_t n_result   = hparams.n_vocab * cparams.n_ubatch;
 
-    // compute buffer size for input, each layer, and output
-    const int64_t n_buf_inp  = (n_inp_toks + n_inp_embd) * ggml_type_size(GGML_TYPE_F32);
-    const int64_t n_buf_act  = (n_bak_embd + n_inp_pos + n_kq_mask + 
-                                 n_inp_out_ids + n_norm + n_qcur + n_kq
-                                ) * ggml_type_size(GGML_TYPE_F32);
-    const int64_t n_buf_out  = (n_out_embd + n_output) * ggml_type_size(GGML_TYPE_F32);
+    // weights
+    const int64_t nb_output_w    = n_bytes.nb_output_w;
+    const int64_t nb_attn_norm_w = n_bytes.nb_attn_norm_w;
+    const int64_t nb_ffn_gate_w  = n_bytes.nb_ffn_gate_w;
+    const int64_t nb_ffn_down_w  = n_bytes.nb_ffn_down_w;
+    
+    const int64_t nb_act_buf_base = (n_bak_embd + n_norm + n_inp_pos + n_ffn_gate) * ggml_type_size(GGML_TYPE_F32);
+    *gpu_buf = use_gpu ? nb_act_buf_base : 0;
+    *cpu_buf = nb_act_buf_base;
+    int64_t gpu_host_buf = 0;
 
-    *cpu_buf = 0;
-    *gpu_buf = 0;
-    if (is_master) *cpu_buf = n_buf_inp + n_buf_out;
-
+    // estimate GPU computing buffer and GPU-host computing buffer
     if (use_gpu) {
-        *gpu_buf += n_buf_act;
-        if (n_layers > n_gpu_layers) {
-            *cpu_buf += n_buf_act;
+        if (is_master) {
+            if (offload) {
+                *gpu_buf += (n_ffn_up + n_qcur) * ggml_type_size(GGML_TYPE_F32) + nb_attn_norm_w + nb_ffn_gate_w;
+            } else {
+                *gpu_buf += (n_ffn_up + n_qcur + n_kq_mask + n_inp_out_ids) * ggml_type_size(GGML_TYPE_F32);
+            }
+            *gpu_buf     += (n_out_embd + n_result) * ggml_type_size(GGML_TYPE_F32) + nb_output_w;
+            gpu_host_buf  = (n_inp_toks + n_inp_embd + n_bak_embd + n_inp_pos + n_kq_mask + n_inp_out_ids + n_out_embd) * ggml_type_size(GGML_TYPE_F32);
+        } else {
+            if (offload) {
+                *gpu_buf += n_qcur * ggml_type_size(GGML_TYPE_F32) + nb_attn_norm_w + nb_ffn_gate_w + nb_ffn_down_w;
+            } else {
+                *gpu_buf += (n_ffn_up + n_kq_mask) * ggml_type_size(GGML_TYPE_F32);
+            }
+            gpu_host_buf  = (n_bak_embd + n_inp_pos + n_kq_mask) * ggml_type_size(GGML_TYPE_F32);
         }
-    } else {
-        *cpu_buf += n_buf_act;
+    } 
+    
+    // estimate CPU computing buffer
+    {
+        if (is_master) {
+            *cpu_buf += (n_ffn_up + n_kq_mask + n_inp_out_ids + n_qcur + n_inp_toks + n_inp_embd + n_out_embd + n_result) * ggml_type_size(GGML_TYPE_F32);
+        } else {
+            *cpu_buf += (n_ffn_up + n_kq_mask) * ggml_type_size(GGML_TYPE_F32);
+        }
+        *cpu_buf += gpu_host_buf;
     }
+
+    LLAMA_LOG_INFO("%s: compute buffer size = %7.2f MiB (GPU) + %7.2f MiB (GPU-Host)\n", __func__,
+            *gpu_buf / (1024.0 * 1024.0), gpu_host_buf / (1024.0 * 1024.0));
+    LLAMA_LOG_INFO("%s: compute buffer size = %7.2f MiB (CPU)\n", __func__,
+            *cpu_buf / (1024.0 * 1024.0));
 }
 
 void llama_total_kv_size(
@@ -22045,6 +22075,7 @@ void llama_model_n_flops(
             if (blk_suffix == "attn_norm.weight" || blk_suffix == "ffn_norm.weight") {
                 count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 4 * n_embd + 1); // rms norm
                 count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, n_embd); // norm weights
+                n_bytes->nb_attn_norm_w = std::max(n_bytes->nb_attn_norm_w, (int64_t)ggml_nbytes(cur));
             } else if (blk_suffix == "attn_q.weight") {
                 count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_embd);
                 count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2.5 * n_embd);  // rope
@@ -22062,9 +22093,11 @@ void llama_model_n_flops(
             } else if (blk_suffix == "ffn_gate.weight") {
                 count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
                 count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 8 * n_ff); // SiLU
+                n_bytes->nb_ffn_gate_w = std::max(n_bytes->nb_ffn_gate_w, (int64_t)ggml_nbytes(cur));
             } else if (blk_suffix == "ffn_down.weight") {
                 count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
                 count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_embd); // shortcut
+                n_bytes->nb_ffn_down_w = std::max(n_bytes->nb_ffn_down_w, (int64_t)ggml_nbytes(cur));
             } else if (blk_suffix == "ffn_up.weight") {
                 count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_ff);
                 count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, n_ff); // silu(gate(x)) * up(x)
@@ -22097,6 +22130,7 @@ void llama_model_n_flops(
                 count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_OUTPUT, 5 * n_vocab); // softmax
                 count_n_params(n_params, cur->type,     PROFILER_LAYER_OUTPUT, ggml_nelements(cur));
                 count_n_bytes (n_bytes,                 PROFILER_LAYER_OUTPUT, ggml_nbytes(cur));
+                n_bytes->nb_output_w = std::max(n_bytes->nb_output_w, (int64_t)ggml_nbytes(cur));
             } else if (tensor_name == "rope_freqs.weight") {
                 if (!rope_used) {
                     count_n_params(n_params, cur->type,     PROFILER_LAYER_BACKEND, ggml_nelements(cur));

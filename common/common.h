@@ -152,6 +152,7 @@ struct gpt_params {
     bool    prefetch              = false; // prefetch layer weights
     bool    keep_out_in_metal     =  true; // whether to keep output weights in metal memory, true by default
     bool    force                 = false; // force to start prefetching after computation
+    float   master_priority       =  1.01; // priority to assign workload to the master (set 1.01 to use master first, and 0.99 to offload to other devices)
     int32_t gpu_mem               = 999.0; // gpu memory to use, in GiB
     int32_t n_cycles              =     0; // number of cycles to output one token
     int32_t n_predict             =    -1; // new tokens to predict
