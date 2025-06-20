@@ -749,6 +749,9 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
         format("maximum GPU memory to use (default: %d)", params.gpu_mem),
         [](gpt_params & params, int value) {
             params.gpu_mem = value; // in GiB
+            if (value == 0) {
+                LOG_WRN("WARN: Set --gpu-mem to 0 may lead to errors during workload distribution.\n");
+            }
         }
     ).set_env("LLAMA_ARG_CUDA_MEM"));
     add_opt(llama_arg(

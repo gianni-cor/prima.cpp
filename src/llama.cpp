@@ -3673,6 +3673,7 @@ void llama_profile_device(
     // reserved/limit memory to avoid potential OOM, default to 300 MiB
     dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.memory_free         = std::min((float)gpu_mem, dev_info->gpu_props.memory_free) - 0.3;
+    dev_info->gpu_props.memory_free         = std::max(dev_info->gpu_props.memory_free, 0.0f);
 
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.metal_read_vram_bw  = device_metal_read_vram_bw();
@@ -21861,10 +21862,11 @@ void llama_model_compute_buf_size(
                              int64_t * gpu_buf, 
             const struct llama_model * model, 
    const struct llama_context_params   cparams,
-                                bool   use_gpu,
+                   enum backend_type   backend,
                                 bool   is_master,
                   struct model_bytes   n_bytes,
-                                bool   offload) {
+                                bool   offload,
+                                bool   has_gpu_layers) {
     const llama_hparams hparams = model->hparams;
 
     // input tensors
@@ -21879,6 +21881,9 @@ void llama_model_compute_buf_size(
     const int64_t n_qcur     = hparams.n_embd  * cparams.n_ubatch;
     const int64_t n_ffn_gate = hparams.n_ff()  * cparams.n_ubatch;
     const int64_t n_ffn_up   = hparams.n_ff()  * cparams.n_ubatch;
+    const int64_t n_ffn_out  = hparams.n_embd  * cparams.n_ubatch;
+    const int64_t n_ffn_inp  = hparams.n_embd  * cparams.n_ubatch;
+    const int64_t n_kq       = cparams.n_ctx   * cparams.n_ubatch * hparams.n_head();
     const int64_t n_inp_out_ids = cparams.n_ubatch;
 
     // outputs
@@ -21890,40 +21895,82 @@ void llama_model_compute_buf_size(
     const int64_t nb_attn_norm_w = n_bytes.nb_attn_norm_w;
     const int64_t nb_ffn_gate_w  = n_bytes.nb_ffn_gate_w;
     const int64_t nb_ffn_down_w  = n_bytes.nb_ffn_down_w;
-    
-    const int64_t nb_act_buf_base = (n_bak_embd + n_norm + n_inp_pos + n_ffn_gate) * ggml_type_size(GGML_TYPE_F32);
-    *gpu_buf = use_gpu ? nb_act_buf_base : 0;
-    *cpu_buf = nb_act_buf_base;
+
+    const int64_t type_size_f32 = ggml_type_size(GGML_TYPE_F32);
+
+    bool use_gpu = backend != BACKEND_CPU && has_gpu_layers;
+    *gpu_buf = 0;
+    *cpu_buf = 0;
     int64_t gpu_host_buf = 0;
 
-    // estimate GPU computing buffer and GPU-host computing buffer
-    if (use_gpu) {
+    if (backend == BACKEND_CUDA) {
+        const int64_t nb_act_buf_base = (n_bak_embd + n_norm + n_inp_pos + n_ffn_gate) * type_size_f32;
+        *gpu_buf = use_gpu ? nb_act_buf_base : 0;
+
+        // CUDA computing buffer and CUDA-host buffer
         if (is_master) {
             if (offload) {
-                *gpu_buf += (n_ffn_up + n_qcur) * ggml_type_size(GGML_TYPE_F32) + nb_attn_norm_w + nb_ffn_gate_w;
+                *gpu_buf += (n_ffn_up + n_qcur) * type_size_f32 + nb_attn_norm_w + nb_ffn_gate_w;
             } else {
-                *gpu_buf += (n_ffn_up + n_qcur + n_kq_mask + n_inp_out_ids) * ggml_type_size(GGML_TYPE_F32);
+                *gpu_buf += (n_ffn_up + n_qcur + n_kq_mask + n_inp_out_ids) * type_size_f32;
             }
-            *gpu_buf     += (n_out_embd + n_result) * ggml_type_size(GGML_TYPE_F32) + nb_output_w;
-            gpu_host_buf  = (n_inp_toks + n_inp_embd + n_bak_embd + n_inp_pos + n_kq_mask + n_inp_out_ids + n_out_embd) * ggml_type_size(GGML_TYPE_F32);
+            *gpu_buf     += (n_out_embd + n_result) * type_size_f32 + nb_output_w;
+            gpu_host_buf  = (n_inp_toks + n_inp_embd + n_bak_embd + n_inp_pos + n_kq_mask + n_inp_out_ids + n_out_embd) * type_size_f32;
         } else {
             if (offload) {
-                *gpu_buf += n_qcur * ggml_type_size(GGML_TYPE_F32) + nb_attn_norm_w + nb_ffn_gate_w + nb_ffn_down_w;
+                *gpu_buf += n_qcur * type_size_f32 + nb_attn_norm_w + nb_ffn_gate_w + nb_ffn_down_w;
             } else {
-                *gpu_buf += (n_ffn_up + n_kq_mask) * ggml_type_size(GGML_TYPE_F32);
+                *gpu_buf += (n_ffn_up + n_kq_mask) * type_size_f32;
             }
-            gpu_host_buf  = (n_bak_embd + n_inp_pos + n_kq_mask) * ggml_type_size(GGML_TYPE_F32);
+            gpu_host_buf  = (n_bak_embd + n_inp_pos + n_kq_mask) * type_size_f32;
         }
     } 
     
-    // estimate CPU computing buffer
-    {
-        if (is_master) {
-            *cpu_buf += (n_ffn_up + n_kq_mask + n_inp_out_ids + n_qcur + n_inp_toks + n_inp_embd + n_out_embd + n_result) * ggml_type_size(GGML_TYPE_F32);
+    else if (backend == BACKEND_METAL) {
+        const int64_t nb_act_buf_base = (n_inp_pos + n_kq_mask) * type_size_f32;
+        *gpu_buf = nb_act_buf_base;
+        *cpu_buf = nb_act_buf_base;
+
+        if (use_gpu) {
+            if (is_master) {
+                *cpu_buf += (n_inp_toks + n_inp_embd + n_bak_embd + n_inp_out_ids + n_out_embd + n_result) * type_size_f32;
+
+                if (offload) {
+                    *gpu_buf += (n_ffn_out + n_ffn_inp + n_inp_out_ids) * type_size_f32;
+                    *gpu_buf += std::max(n_ffn_up + n_ffn_gate, n_qcur + n_qcur + n_kq) * type_size_f32;
+                    *cpu_buf += n_norm * type_size_f32;
+                    *cpu_buf += std::max(n_ffn_up + n_ffn_gate, n_qcur + n_qcur + n_kq) * type_size_f32;
+                } else {
+                    *gpu_buf += (n_bak_embd + n_inp_out_ids + n_norm) * type_size_f32;
+                    *gpu_buf += std::max(n_ffn_up + n_ffn_gate, n_qcur + n_qcur + n_kq) * type_size_f32;
+                }
+            } else {
+                *gpu_buf += (n_ffn_out + n_ffn_inp) * type_size_f32;
+                *gpu_buf += std::max(n_ffn_up + n_ffn_gate, n_qcur + n_qcur + n_kq) * type_size_f32;
+
+                *cpu_buf += n_bak_embd * type_size_f32;
+                if (offload) {
+                    *cpu_buf += n_norm * type_size_f32;
+                    *cpu_buf += std::max(n_ffn_up + n_ffn_gate, n_qcur + n_qcur + n_kq) * type_size_f32;
+                }
+            }
         } else {
-            *cpu_buf += (n_ffn_up + n_kq_mask) * ggml_type_size(GGML_TYPE_F32);
+            *gpu_buf = 0;
+            *cpu_buf = 0;
         }
-        *cpu_buf += gpu_host_buf;
+    }
+
+    else if (backend != BACKEND_CPU) {
+        GGML_ASSERT(false && "Unsupported backend type for compute buffer estimation.\n");
+    }
+
+    // CPU computing buffer
+    if (*cpu_buf == 0) {
+        *cpu_buf = (n_inp_pos + n_kq_mask + n_bak_embd + n_norm) * type_size_f32;
+        if (is_master) {
+            *cpu_buf += (n_inp_toks + n_inp_embd + n_inp_out_ids + n_out_embd + n_result) * type_size_f32;   
+        }
+        *cpu_buf += std::max(n_ffn_gate + n_ffn_up, n_qcur + n_qcur + n_kq) * type_size_f32;
     }
 
     LLAMA_LOG_INFO("%s: compute buffer size = %7.2f MiB (GPU) + %7.2f MiB (GPU-Host)\n", __func__,

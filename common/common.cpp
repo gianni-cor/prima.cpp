@@ -847,6 +847,16 @@ static std::string vec_to_str(const std::vector<T> & vec) {
     return oss.str();
 }
 
+static backend_type get_backend_type(const gpu_support & support) {
+    if (support.cuda)    return BACKEND_CUDA;
+    if (support.metal)   return BACKEND_METAL;
+    if (support.vulkan)  return BACKEND_VULKAN;
+    if (support.kompute) return BACKEND_KOMPUTE;
+    if (support.gpublas) return BACKEND_GPUBLAS;
+    if (support.sycl)    return BACKEND_SYCL;
+    return BACKEND_CPU;
+}
+
 static bool assign_layers_to_device(
                                 uint32_t   n_world,
                        const device_info * dev_info_set, 
@@ -972,7 +982,7 @@ static bool assign_layers_to_device(
         bool is_android = strcmp(dev.device_os, "Android") == 0;
         bool is_windows = strcmp(dev.device_os, "Windows") == 0;
         GGML_ASSERT(!is_windows && "Windows is not tested yet\n");
-        
+
         if ((is_macos && !dev.gpu_support.metal) || is_linux) {
             mem_budget[m] = dev.memory.available_physical;
         } else if (is_macos && dev.gpu_support.metal) {
@@ -985,17 +995,36 @@ static bool assign_layers_to_device(
         }
     }
 
-    // initialize w_m proportionally to memory budget and n_m to 0
+    // initialize w_m proportionally to memory budget
     float total_mem_budget = std::accumulate(mem_budget.begin(), mem_budget.end(), 0.0f);
     for (uint32_t m = 0; m < n_world; ++m) {
         w[m] = std::round(mem_budget[m] / total_mem_budget * n_layer);
-        n[m] = 0;
+    }
+    // no 0 is allowed in w, it must be at least 1
+    for (uint32_t m = 0; m < n_world; ++m) {
+        if (w[m] == 0) {
+            w[m] = 1;
+            // find the maximum and decrease it by 1
+            auto max_it = std::max_element(w.begin(), w.end());
+            if (max_it != w.end() && *max_it > 1) {
+                *max_it -= 1;
+            }
+        }
     }
     // adjust w[m] to ensure L mod W = 0
     int diff = n_layer - std::accumulate(w.begin(), w.end(), 0);
     auto device = (diff > 0) ? std::max_element(mem_budget.begin(), mem_budget.end()) 
                              : std::min_element(mem_budget.begin(), mem_budget.end());
     w[std::distance(mem_budget.begin(), device)] += diff;
+
+    // initialize n_m to w_m (if there is GPU), assume all layers can run on GPU
+    for (uint32_t m = 0; m < n_world; ++m) {
+        if (dev_info_set[m].gpu_support.metal || dev_info_set[m].gpu_support.cuda) {
+            n[m] = w[m];
+        } else {
+            n[m] = 0;
+        }
+    }
 
     // stores the actual read bandwidth (GB/s) for each device
     std::vector<float> disk_speed(n_world, 0.0f);
@@ -1052,8 +1081,7 @@ static bool assign_layers_to_device(
             bool is_windows = strcmp(dev.device_os, "Windows") == 0;
             GGML_ASSERT(!is_windows && "Windows is not tested yet\n");
 
-            bool use_gpu = dev.gpu_support.metal || dev.gpu_support.cuda;
-            llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, use_gpu, m == 0, dev_info_set[0].model_bytes, w[m] > n[m]);
+            llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, get_backend_type(dev.gpu_support), m == 0, dev_info_set[0].model_bytes, w[m] > n[m], n[m] > 0);
 
             int  l_m          = w[m] * k;  // total number of layers assigned to device m
             int  l_m_gpu      = n[m] * k;  // number of layers assigned to device m that run on GPU
@@ -1424,14 +1452,18 @@ static bool assign_layers_to_device(
                 if (n_m < static_cast<uint32_t>(std::floor(W * vec_z_gpu[m]))) {
                     // if there is still free GPU memory
                     has_free_gpu_memory = true;
+                    LOG_INF("Device %d still has free GPU memory: w_m = %d, n_m = %d, W * vec_z_gpu[m]) = %d\n", 
+                        m, w_m, n_m, static_cast<uint32_t>(std::floor(W * vec_z_gpu[m])));
                 }
                 if (w_m > n_m) {
                     // if layers are offloaded to CPU
                     has_gpu_overload = true;
+                    LOG_INF("Device %d has GPU overload: w_m = %d, n_m = %d\n", m, w_m, n_m);
                 }
             } else if (!in_set(m, M4)) {
                 // if the CPU is overloaded
                 has_cpu_overload = true;
+                LOG_INF("Device %d has CPU overload.\n", m);
             }
         }
 
@@ -1522,7 +1554,7 @@ static bool assign_layers_to_device(
     for (uint32_t m = 0; m < n_world; ++m) {
         const device_info & dev = dev_info_set[m];
         bool use_gpu = dev.gpu_support.metal || dev.gpu_support.cuda;
-        llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, use_gpu, m == 0, dev_info_set[0].model_bytes);
+        llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, get_backend_type(dev.gpu_support), m == 0, dev_info_set[0].model_bytes, true);
 
         if (dev.gpu_support.cuda || dev.gpu_support.metal) {
             int64_t required_mem = w[m] * b_prime;

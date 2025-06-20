@@ -67,6 +67,16 @@ extern "C" {
     typedef int32_t llama_token;
     typedef int32_t llama_seq_id;
 
+    enum backend_type {
+        BACKEND_CPU     = 0,
+        BACKEND_CUDA    = 1,
+        BACKEND_METAL   = 2,
+        BACKEND_VULKAN  = 3,
+        BACKEND_KOMPUTE = 4,
+        BACKEND_GPUBLAS = 5,
+        BACKEND_SYCL    = 6
+    };
+
     enum llama_vocab_type {
         LLAMA_VOCAB_TYPE_NONE = 0, // For models without vocab
         LLAMA_VOCAB_TYPE_SPM  = 1, // LLaMA tokenizer based on byte-level BPE with byte fallback
@@ -574,10 +584,11 @@ extern "C" {
                                    int64_t * gpu_buf,
                   const struct llama_model * model, 
          const struct llama_context_params   cparams, 
-                                      bool   use_gpu,
+                         enum backend_type   backend,
                                       bool   is_master,
                         struct model_bytes   n_bytes,
-                                      bool   offload);
+                                      bool   offload,
+                                      bool   has_gpu_layers);
 
     // Return the size of KV cache in the model
     LLAMA_API void llama_total_kv_size(
