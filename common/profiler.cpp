@@ -924,7 +924,7 @@ static void check_env_path() {
     setenv("PATH", update_env_path.c_str(), 1);
 }
 
-static void external_fio_impl(float * read_bw, float * write_bw, bool op_rand, int n_threads) {
+static void external_fio_impl(float * read_bw, float * write_bw, bool op_rand, int n_threads) {    
     pid_t pid = getpid(); // avoid conflict with other processes
 
     std::string test_file   = "fio_test_"   + std::to_string(pid);
@@ -1610,13 +1610,13 @@ static float device_disk_access_delay(struct device_info & dev_info, struct llam
 #elif GGML_USE_CUDA
     backend = BACKEND_CUDA;
 #endif
-    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, backend,  true, n_bytes, n_layers > n_gpu_layers, n_gpu_layers > 0);
+    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, backend, 0, n_bytes, n_layers > n_gpu_layers, n_gpu_layers > 0);
 
 #else
     llama_kv_size(&cpu_kv_size, &gpu_kv_size, model, cparams, false);
 
     enum backend_type backend = BACKEND_CPU;
-    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, backend, true, n_bytes, n_layers > n_gpu_layers, n_gpu_layers > 0);
+    llama_model_compute_buf_size(&cpu_compute_buf, &gpu_compute_buf, model, cparams, backend, 0, n_bytes, n_layers > n_gpu_layers, n_gpu_layers > 0);
 #endif
 
     double cpu_kv_size_gib     = static_cast<double>(cpu_kv_size) / 1024.0 / 1024.0 / 1024.0;     // convert to GiB

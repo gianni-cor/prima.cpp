@@ -585,7 +585,7 @@ extern "C" {
                   const struct llama_model * model, 
          const struct llama_context_params   cparams, 
                          enum backend_type   backend,
-                                      bool   is_master,
+                                       int   my_rank,
                         struct model_bytes   n_bytes,
                                       bool   offload,
                                       bool   has_gpu_layers);

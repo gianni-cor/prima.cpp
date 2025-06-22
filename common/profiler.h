@@ -295,18 +295,22 @@ struct model_bytes {
 
     // used to estimate the compute buffer size 
     int64_t nb_output_w;
+    int64_t nb_output_norm_w;
     int64_t nb_attn_norm_w;
+    int64_t nb_attn_q_w;
     int64_t nb_ffn_gate_w;
     int64_t nb_ffn_down_w;
 
     model_bytes() :
-        nb_input      (0),
-        nb_layer      (0),
-        nb_output     (0), 
-        nb_output_w   (0),
-        nb_attn_norm_w(0),
-        nb_ffn_gate_w (0),
-        nb_ffn_down_w (0) {}
+        nb_input        (0),
+        nb_layer        (0),
+        nb_output       (0), 
+        nb_output_w     (0),
+        nb_output_norm_w(0),
+        nb_attn_norm_w  (0),
+        nb_attn_q_w     (0),
+        nb_ffn_gate_w   (0),
+        nb_ffn_down_w   (0) {}
 };
 
 struct disk_props {

@@ -1081,7 +1081,7 @@ static bool assign_layers_to_device(
             bool is_windows = strcmp(dev.device_os, "Windows") == 0;
             GGML_ASSERT(!is_windows && "Windows is not tested yet\n");
 
-            llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, get_backend_type(dev.gpu_support), m == 0, dev_info_set[0].model_bytes, w[m] > n[m], n[m] > 0);
+            llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, get_backend_type(dev.gpu_support), m, dev_info_set[0].model_bytes, w[m] > n[m], n[m] > 0);
 
             int  l_m          = w[m] * k;  // total number of layers assigned to device m
             int  l_m_gpu      = n[m] * k;  // number of layers assigned to device m that run on GPU
@@ -1242,6 +1242,7 @@ static bool assign_layers_to_device(
                 if (dev.gpu_support.metal && m == 0 && cparams.keep_out_in_metal) {
                     vec_z_gpu[m] -= (double)bo / (double)(n_layer * b_prime);
                 }
+                vec_z_gpu[m] = std::max(vec_z_gpu[m], 0.0f);
             }
         }
 
@@ -1554,7 +1555,7 @@ static bool assign_layers_to_device(
     for (uint32_t m = 0; m < n_world; ++m) {
         const device_info & dev = dev_info_set[m];
         bool use_gpu = dev.gpu_support.metal || dev.gpu_support.cuda;
-        llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, get_backend_type(dev.gpu_support), m == 0, dev_info_set[0].model_bytes, true);
+        llama_model_compute_buf_size(&c_cpu[m], &c_gpu[m], model, cparams, get_backend_type(dev.gpu_support), m, dev_info_set[0].model_bytes, true);
 
         if (dev.gpu_support.cuda || dev.gpu_support.metal) {
             int64_t required_mem = w[m] * b_prime;

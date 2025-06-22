@@ -21863,11 +21863,12 @@ void llama_model_compute_buf_size(
             const struct llama_model * model, 
    const struct llama_context_params   cparams,
                    enum backend_type   backend,
-                                bool   is_master,
+                                 int   my_rank,
                   struct model_bytes   n_bytes,
                                 bool   offload,
                                 bool   has_gpu_layers) {
     const llama_hparams hparams = model->hparams;
+    bool is_master = my_rank == 0;
 
     // input tensors
     const int64_t n_inp_toks = cparams.n_ubatch;
@@ -21884,6 +21885,8 @@ void llama_model_compute_buf_size(
     const int64_t n_ffn_out  = hparams.n_embd  * cparams.n_ubatch;
     const int64_t n_ffn_inp  = hparams.n_embd  * cparams.n_ubatch;
     const int64_t n_kq       = cparams.n_ctx   * cparams.n_ubatch * hparams.n_head();
+    const int64_t n_k        = cparams.n_ctx   * hparams.n_embd_head_k * hparams.n_head_kv();
+    const int64_t n_v        = cparams.n_ctx   * hparams.n_embd_head_v * hparams.n_head_kv();
     const int64_t n_inp_out_ids = cparams.n_ubatch;
 
     // outputs
@@ -21893,34 +21896,60 @@ void llama_model_compute_buf_size(
     // weights
     const int64_t nb_output_w    = n_bytes.nb_output_w;
     const int64_t nb_attn_norm_w = n_bytes.nb_attn_norm_w;
-    const int64_t nb_ffn_gate_w  = n_bytes.nb_ffn_gate_w;
-    const int64_t nb_ffn_down_w  = n_bytes.nb_ffn_down_w;
+    const int64_t nb_attn_q_w    = n_bytes.nb_attn_q_w;
 
+    // format bytes
     const int64_t type_size_f32 = ggml_type_size(GGML_TYPE_F32);
+    const int64_t type_size_f16 = ggml_type_size(GGML_TYPE_F16);
 
     bool use_gpu = backend != BACKEND_CPU && has_gpu_layers;
     *gpu_buf = 0;
     *cpu_buf = 0;
     int64_t gpu_host_buf = 0;
 
+    // GPU compute buffer
+    // estimate the GPU compute buffer, here we can only estimate the upper bound of various models,
+    // but cannot estimate the exact value.
     if (backend == BACKEND_CUDA) {
-        const int64_t nb_act_buf_base = (n_bak_embd + n_norm + n_inp_pos + n_ffn_gate) * type_size_f32;
-        *gpu_buf = use_gpu ? nb_act_buf_base : 0;
+        *gpu_buf = (n_bak_embd + n_norm) * type_size_f32;
 
-        // CUDA computing buffer and CUDA-host buffer
         if (is_master) {
-            if (offload) {
-                *gpu_buf += (n_ffn_up + n_qcur) * type_size_f32 + nb_attn_norm_w + nb_ffn_gate_w;
+            if (has_gpu_layers) {
+                if (offload) {
+                    *gpu_buf += std::max<int64_t>({
+                        (n_qcur + n_inp_pos + n_kq_mask + n_inp_out_ids) * type_size_f32 + nb_attn_norm_w,
+                        (n_qcur + n_inp_pos + n_norm) * type_size_f32 + nb_attn_norm_w,
+                        (n_qcur + n_qcur + n_kq_mask + n_inp_pos) * type_size_f32,
+                        (n_qcur + n_qcur + n_inp_pos) * type_size_f32 + nb_attn_q_w,
+                        n_inp_pos * type_size_f32 + (n_k + n_v) * type_size_f16 + nb_attn_q_w
+                    });
+                } else {
+                    *gpu_buf += (n_qcur + n_inp_pos + n_kq_mask + n_inp_out_ids) * type_size_f32;
+                }
+                *gpu_buf += (n_qcur + n_kq) * type_size_f32;
             } else {
-                *gpu_buf += (n_ffn_up + n_qcur + n_kq_mask + n_inp_out_ids) * type_size_f32;
+                *gpu_buf += (n_qcur + n_kq) * type_size_f32;
+                *gpu_buf += std::max<int64_t>({
+                    (n_kq_mask + n_qcur + n_inp_pos) * type_size_f32 + nb_attn_norm_w,
+                    (n_inp_pos + n_kq_mask) * type_size_f32 + n_v * type_size_f16 + nb_attn_norm_w,
+                });
             }
             *gpu_buf     += (n_out_embd + n_result) * type_size_f32 + nb_output_w;
             gpu_host_buf  = (n_inp_toks + n_inp_embd + n_bak_embd + n_inp_pos + n_kq_mask + n_inp_out_ids + n_out_embd) * type_size_f32;
         } else {
-            if (offload) {
-                *gpu_buf += n_qcur * type_size_f32 + nb_attn_norm_w + nb_ffn_gate_w + nb_ffn_down_w;
+            if (has_gpu_layers) {
+                if (offload) {
+                    *gpu_buf += (n_kq + n_qcur) * type_size_f32;
+                    *gpu_buf += std::max<int64_t>({
+                        (n_inp_pos + n_norm + n_kq_mask) * type_size_f32 + nb_attn_norm_w,
+                        (n_inp_pos + n_norm + n_qcur)    * type_size_f32 + nb_attn_norm_w,
+                        n_inp_pos * type_size_f32 + (n_k + n_v) * type_size_f16 + nb_attn_q_w,
+                    });
+                } else {
+                    *gpu_buf += (n_inp_pos + n_kq_mask + n_qcur + n_qcur + n_kq) * type_size_f32;
+                }
             } else {
-                *gpu_buf += (n_ffn_up + n_kq_mask) * type_size_f32;
+                *gpu_buf += (n_qcur + n_kq + n_kq_mask + n_qcur + n_inp_pos) * type_size_f32 + nb_attn_norm_w;
             }
             gpu_host_buf  = (n_bak_embd + n_inp_pos + n_kq_mask) * type_size_f32;
         }
@@ -21964,19 +21993,22 @@ void llama_model_compute_buf_size(
         GGML_ASSERT(false && "Unsupported backend type for compute buffer estimation.\n");
     }
 
-    // CPU computing buffer
+    // CPU compute buffer
     if (*cpu_buf == 0) {
         *cpu_buf = (n_inp_pos + n_kq_mask + n_bak_embd + n_norm) * type_size_f32;
         if (is_master) {
             *cpu_buf += (n_inp_toks + n_inp_embd + n_inp_out_ids + n_out_embd + n_result) * type_size_f32;   
         }
         *cpu_buf += std::max(n_ffn_gate + n_ffn_up, n_qcur + n_qcur + n_kq) * type_size_f32;
+        *cpu_buf += gpu_host_buf;
     }
 
-    LLAMA_LOG_INFO("%s: compute buffer size = %7.2f MiB (GPU) + %7.2f MiB (GPU-Host)\n", __func__,
-            *gpu_buf / (1024.0 * 1024.0), gpu_host_buf / (1024.0 * 1024.0));
-    LLAMA_LOG_INFO("%s: compute buffer size = %7.2f MiB (CPU)\n", __func__,
-            *cpu_buf / (1024.0 * 1024.0));
+    LLAMA_LOG_INFO("\n");
+    LLAMA_LOG_INFO("%s: here the compute buffer size is a predicted upper bound, not an exact value\n", __func__);
+    LLAMA_LOG_INFO("%s: (rank %d) compute buffer size = %7.2f MiB (GPU) + %7.2f MiB (GPU-Host)\n", __func__,
+            my_rank, *gpu_buf / (1024.0 * 1024.0), gpu_host_buf / (1024.0 * 1024.0));
+    LLAMA_LOG_INFO("%s: (rank %d) compute buffer size = %7.2f MiB (CPU and GPU-Host buffer)\n", __func__,
+            my_rank, *cpu_buf / (1024.0 * 1024.0));
 }
 
 void llama_total_kv_size(
@@ -22126,6 +22158,7 @@ void llama_model_n_flops(
             } else if (blk_suffix == "attn_q.weight") {
                 count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_embd);
                 count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2.5 * n_embd);  // rope
+                n_bytes->nb_attn_q_w = std::max(n_bytes->nb_attn_q_w, (int64_t)ggml_nbytes(cur));
             } else if (blk_suffix == "attn_k.weight") {
                 count_n_flops (n_flops,  cur->type,     PROFILER_LAYER_BACKEND, 2 * n_embd * n_head_kv * n_embd_head_k);
                 count_n_flops (n_flops,  GGML_TYPE_F32, PROFILER_LAYER_BACKEND, 2.5 * n_embd_head_k * n_head_kv); // rope
