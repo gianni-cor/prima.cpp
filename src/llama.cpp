@@ -22012,8 +22012,9 @@ void llama_model_compute_buf_size(
     if (backend == BACKEND_CUDA) {
         // context GPU memory usage, i.e. the initial memory cost of creating a CUDA context, 
         // even before you launch any kernels or allocate your own buffers.
-        // this value may vary by GPU and CUDA version, but it's lower than 400 MiB in most cases.
-        *gpu_buf += 400 * 1024 * 1024;
+        // this value may vary by GPU and CUDA version, but it's lower than 400 MiB in most cases,
+        // another 100 MiB is used to prevent accidental OOM.
+        *gpu_buf += 500 * 1024 * 1024;
     }
 }
 
