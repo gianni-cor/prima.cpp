@@ -986,7 +986,7 @@ static bool assign_layers_to_device(
         if ((is_macos && !dev.gpu_support.metal) || is_linux) {
             mem_budget[m] = dev.memory.available_physical;
         } else if (is_macos && dev.gpu_support.metal) {
-            mem_budget[m] = dev.gpu_props.memory_free;
+            mem_budget[m] = dev.gpu_props.memory_free + 1e-4; // to avoid division by zero
         } else if (is_android) {
             mem_budget[m] = dev.memory.available_physical + dev.memory.used_can_swap;
         } else {

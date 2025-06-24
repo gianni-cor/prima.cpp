@@ -3669,12 +3669,8 @@ void llama_profile_device(
 #if defined(GGML_USE_METAL) || defined(GGML_USE_CUDA)
     dev_info->gpu_props.name                = gpu_props.name;
     dev_info->gpu_props.description         = gpu_props.description;
-
-    // reserved/limit memory to avoid potential OOM, default to 300 MiB
-    dev_info->gpu_props.memory_free         = round(gpu_props.memory_free  / (double)(1 << 30) * 100) / 100;
-    dev_info->gpu_props.memory_free         = std::min((float)gpu_mem, dev_info->gpu_props.memory_free) - 0.3;
-    dev_info->gpu_props.memory_free         = std::max(dev_info->gpu_props.memory_free, 0.0f);
-
+    dev_info->gpu_props.memory_free         = round(gpu_props.memory_free / (double)(1 << 30) * 100) / 100;
+    dev_info->gpu_props.memory_free         = std::min((float)gpu_mem, dev_info->gpu_props.memory_free);
     dev_info->gpu_props.memory_total        = round(gpu_props.memory_total / (double)(1 << 30) * 100) / 100;
     dev_info->gpu_props.metal_read_vram_bw  = device_metal_read_vram_bw();
     dev_info->gpu_props.cuda_read_vram_bw   = device_cuda_read_vram_bw();
@@ -21324,6 +21320,9 @@ void * llama_context_setup_backend(
             std::vector<ggml_cgraph *> gf = llama_build_graph(*ctx, ubatch, true);
 
             GGML_ASSERT(gf.size() <= MAX_SCHEDULERS && "Number of subgraphs exceeds the maximum number of schedulers\n");
+            for (size_t i = gf.size(); i < ctx->sched.size(); ++i) {
+                ggml_backend_sched_free(ctx->sched[i]);
+            }
             ctx->sched.resize(gf.size());
 
             // initialize scheduler with the worst-case graph
@@ -21993,7 +21992,7 @@ void llama_model_compute_buf_size(
         GGML_ASSERT(false && "Unsupported backend type for compute buffer estimation.\n");
     }
 
-    // CPU compute buffer
+    // CPU compute buffer for NUMA system or Metal with ngl=0
     if (*cpu_buf == 0) {
         *cpu_buf = (n_inp_pos + n_kq_mask + n_bak_embd + n_norm) * type_size_f32;
         if (is_master) {
@@ -22005,10 +22004,15 @@ void llama_model_compute_buf_size(
 
     LLAMA_LOG_INFO("\n");
     LLAMA_LOG_INFO("%s: here the compute buffer size is a predicted upper bound, not an exact value\n", __func__);
-    LLAMA_LOG_INFO("%s: (rank %d) compute buffer size = %7.2f MiB (GPU) + %7.2f MiB (GPU-Host)\n", __func__,
-            my_rank, *gpu_buf / (1024.0 * 1024.0), gpu_host_buf / (1024.0 * 1024.0));
-    LLAMA_LOG_INFO("%s: (rank %d) compute buffer size = %7.2f MiB (CPU and GPU-Host buffer)\n", __func__,
-            my_rank, *cpu_buf / (1024.0 * 1024.0));
+    LLAMA_LOG_INFO("%s: (rank %d) compute buffer size = %7.2f MiB (GPU) + %7.2f MiB (CPU / GPU-host buffer)\n", __func__,
+            my_rank, *gpu_buf / (1024.0 * 1024.0), *cpu_buf / (1024.0 * 1024.0));
+    
+    if (backend == BACKEND_CUDA) {
+        // context GPU memory usage, i.e. the initial memory cost of creating a CUDA context, 
+        // even before you launch any kernels or allocate your own buffers.
+        // this value may vary by GPU and CUDA version, but it's lower than 400 MiB in most cases.
+        *gpu_buf += 400 * 1024 * 1024;
+    }
 }
 
 void llama_total_kv_size(
