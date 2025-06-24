@@ -21994,11 +21994,13 @@ void llama_model_compute_buf_size(
 
     // CPU compute buffer for NUMA system or Metal with ngl=0
     if (*cpu_buf == 0) {
-        *cpu_buf = (n_inp_pos + n_kq_mask + n_bak_embd + n_norm) * type_size_f32;
         if (is_master) {
             *cpu_buf += (n_inp_toks + n_inp_embd + n_inp_out_ids + n_out_embd + n_result) * type_size_f32;   
         }
-        *cpu_buf += std::max(n_ffn_gate + n_ffn_up, n_qcur + n_qcur + n_kq) * type_size_f32;
+        if (offload) {
+            *cpu_buf = (n_inp_pos + n_kq_mask + n_bak_embd + n_norm) * type_size_f32;
+            *cpu_buf += std::max(n_ffn_gate + n_ffn_up, n_qcur + n_qcur + n_kq) * type_size_f32;
+        }
         *cpu_buf += gpu_host_buf;
     }
 
