@@ -123,7 +123,7 @@ Before using this project, ensure you have the following dependencies installed:
 
 ```shell
 # Use apt in Linux and pkg in Termux
-sudo apt update -y && sudo apt install -y gcc-9 make cmake fio git wget libzmq3-dev
+sudo apt update -y && sudo apt install -y gcc-9 make cmake fio git wget libzmq3-dev curl
 ```
 
 For HiGHS, download and install from [source](https://github.com/ERGO-Code/HiGHS):
@@ -141,7 +141,7 @@ sudo ldconfig
 **macOS:**
 
 ```shell
-brew install gcc make cmake fio git wget highs zeromq
+brew install gcc make cmake fio git wget highs zeromq curl
 ```
 
 ### Build, Download, and Test
@@ -205,7 +205,7 @@ graph LR;
 
 > **NOTE:** This ring communication is a communication overlay, not the physical topology. These devices are physically fully connected because they all connect to the same Wi-Fi.
 
-> If possible, disable the firewall to prevent the ports needed (e.g., 9000, 10000) been blocked.
+> If possible, disable the firewall to prevent the ports needed (e.g., 9000, 10000) been blocked, or you can use `--data-port` (9000, by default) and `--signal-port` (10000, by default) to customize the ports used.
 
 
 Take QwQ-32B as an example, run the following commands on the devices to launch distributed inference:
@@ -229,7 +229,7 @@ Once started, prima.cpp will profile each device and decide how much workload to
 ### (Optional) Run with Prebuilt Docker Image
 Assume we have a host machine with at least 32 CPU cores, 32 GiB RAM, and 32 GiB VRAM. We simulate 4 homogeneous nodes using Docker containers, with each node allocated 8 CPU cores, 8 GiB RAM, and 8 GiB VRAM. Follow the below steps to get started:
 
-1. Pull our prebuilt Docker image (e.g., [`prima.cpp:1.0.1-cuda`](https://hub.docker.com/repository/docker/lizonghango00o1/prima.cpp/general)) and run 4 containers:
+1. Pull our prebuilt Docker image (e.g., [`prima.cpp:1.0.2-cuda`](https://hub.docker.com/repository/docker/lizonghango00o1/prima.cpp/general)) and run 4 containers:
 
 ```shell
 sudo docker run -dit --name prima-v1 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="0-7"   --network host --gpus all prima.cpp:1.0.1-cuda
@@ -238,9 +238,7 @@ sudo docker run -dit --name prima-v3 --memory=8gb --memory-swap=8gb --cpus 8 --c
 sudo docker run -dit --name prima-v4 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="24-31" --network host --gpus all prima.cpp:1.0.1-cuda
 ```
 
-> If your host machine does not have a GPU, ignore the `--gpus all` option.
-
-2. Download the model file [`qwq-32b-q4_k_m.gguf`](https://huggingface.co/Qwen/QwQ-32B-GGUF) and copy it into each container:
+1. Download the model file [`qwq-32b-q4_k_m.gguf`](https://huggingface.co/Qwen/QwQ-32B-GGUF) and copy it into each container:
 
 ```shell
 cd prima.cpp/download
@@ -250,27 +248,27 @@ sudo docker cp qwq-32b-q4_k_m.gguf prima-v3:/root/prima.cpp/download/
 sudo docker cp qwq-32b-q4_k_m.gguf prima-v4:/root/prima.cpp/download/
 ```
 
-3. (Optional) Enter each container, rebuild prima.cpp if your host machine does not have a GPU:
+1. Enter each container and build prima.cpp:
 
 ```shell
-cd /root/prima.cpp && make clean
-make -j$(nproc)  # If not rank 0
-make USE_HIGHS=1 -j$(nproc)  # If rank 0
+cd /root/prima.cpp
+make GGML_CUDA=1 USE_HIGHS=1 -j$(nproc)  # For rank 0
+make GGML_CUDA=1 -j$(nproc)  # For other ranks
 ``` 
 
 4. Enter each container and launch the distributed inference:
 
 ```shell
 cd /root/prima.cpp
-(prima-v1) ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 -n 256 -p "what is edge AI?" --world 4 --rank 0 --prefetch --gpu-mem 8
-(prima-v2) ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 1 --prefetch --gpu-mem 8
-(prima-v3) ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 2 --prefetch --gpu-mem 8
-(prima-v4) ./llama-cli -m download/qwq-32b-q4_k_m.gguf -c 1024 --world 4 --rank 3 --prefetch --gpu-mem 8
+(prima-v1) ./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 0 --prefetch --gpu-mem 8 -c 4096 -n 256 -p "what is edge AI?"
+(prima-v2) ./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 1 --prefetch --gpu-mem 8
+(prima-v3) ./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 2 --prefetch --gpu-mem 8
+(prima-v4) ./llama-cli -m download/qwq-32b-q4_k_m.gguf --world 4 --rank 3 --prefetch --gpu-mem 8
 ``` 
 
-> If your host machine does not have a GPU, ignore the `--gpu-mem` option.
+> You can ignore `--gpu-mem` if you don't want to limit VRAM usage.
 
-> If you update to the latest code, non-rank 0 nodes can omit `-c 1024`.
+> Always use `git fetch` to update the local repository.
 
 ### Run in Server Mode
 You can run prima.cpp in server mode, by launching `llama-server` on the rank 0 device (with `--host` and `--port` specified) and `llama-cli` on the others. Here is an example with 2 devices:
