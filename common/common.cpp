@@ -1778,7 +1778,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
                 dev_info_set[0] = dev_info;
 
                 llama_gather_device_info(lctx, dev_info_set.data());
-                device_print_props(dev_info_set.data(), n_world, model, cparams);
+                device_print_props      (dev_info_set.data(), n_world, model, cparams);
 
                 // assign layers to devices and remove weak devices
                 if (!assign_layers_and_select_devices(n_world, dev_info_set, n_layer_window, n_gpu_layers, model, cparams)) {
@@ -1788,8 +1788,7 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
                     return iparams;
                 }
                 llama_bcast_layer_setup(lctx, n_layer_window, n_gpu_layers);
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));  // add a delay to avoid packet interleaving
-                llama_rebuild_topo(lctx, n_layer_window, dev_info_set.data(), &node_type, is_forwarder);
+                llama_rebuild_topo     (lctx, n_layer_window, dev_info_set.data(), &node_type, is_forwarder);
             } else {
                 // use the user-defined n_layer_window
                 std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), n_layer_window);
@@ -1797,12 +1796,11 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
             }
         } else {
             if (auto_schedule){
-                llama_send_device_info(lctx, &dev_info);
-                llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));  // add a delay to avoid packet interleaving
-                llama_rebuild_topo    (lctx, n_layer_window, nullptr, &node_type, is_forwarder);
+                llama_send_device_info (lctx, &dev_info);
+                llama_recv_layer_setup (lctx, n_layer_window, n_gpu_layers);
+                llama_rebuild_topo     (lctx, n_layer_window, nullptr, &node_type, is_forwarder);
             } else {
-                llama_recv_layer_setup(lctx, n_layer_window, n_gpu_layers);
+                llama_recv_layer_setup (lctx, n_layer_window, n_gpu_layers);
             }
         }
 
@@ -1823,17 +1821,13 @@ struct llama_init_result llama_init_from_gpt_params(gpt_params & params) {
             if (n_layer_window[i] <= 0 && is_forwarder[i] == 0) {
                 continue;
             }
-            if (i <= my_rank) {
-                update_rank++;
-            }
+            if (i <= my_rank) update_rank++;
             update_n_world++;
             n_layer_window_temp.push_back(n_layer_window[i]);
             n_gpu_layers_temp.push_back(n_gpu_layers[i]);
 
             if (n_layer_window[i] > 0) {
-                if (i <= my_rank) {
-                    worker_rank++;
-                }
+                if (i <= my_rank) worker_rank++;
                 n_worker++;
             }
         }
