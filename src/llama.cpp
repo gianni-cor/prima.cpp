@@ -3634,8 +3634,8 @@ void llama_profile_device(
     dev_info->memory.total_physical     = round(device_physical_memory(false) / (double)(1 << 30) * 100) / 100;
     dev_info->memory.available_physical = round(device_physical_memory(true)  / (double)(1 << 30) * 100) / 100;
 
-    GGML_ASSERT(dev_info->memory.total_physical     > 0, "Failed to parse total physical memory\n");
-    GGML_ASSERT(dev_info->memory.available_physical > 0, "Failed to parse available physical memory\n");
+    GGML_ASSERT(dev_info->memory.total_physical     > 0 && "Failed to parse total physical memory\n");
+    GGML_ASSERT(dev_info->memory.available_physical > 0 && "Failed to parse available physical memory\n");
 
     dev_info->memory.used_can_swap      = round(device_swappable_memory()     / (double)(1 << 30) * 100) / 100;
     dev_info->memory.total_swap         = round(device_swap_memory(false)     / (double)(1 << 30) * 100) / 100;
@@ -20790,7 +20790,7 @@ int llama_rebuild_topo(llama_context * ctx,
     for (size_t i = 0; i < n_world; i++) {
         is_forwarder[i] = topo_helper[i].is_forwarder;
     }
-    
+
     ctx->cparams.node_type = *node_type;
 
     if (socket_to_close != nullptr) {
