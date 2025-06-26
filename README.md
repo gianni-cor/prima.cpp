@@ -238,7 +238,7 @@ sudo docker run -dit --name prima-v3 --memory=8gb --memory-swap=8gb --cpus 8 --c
 sudo docker run -dit --name prima-v4 --memory=8gb --memory-swap=8gb --cpus 8 --cpuset-cpus="24-31" --network host --gpus all prima.cpp:1.0.1-cuda
 ```
 
-1. Download the model file [`qwq-32b-q4_k_m.gguf`](https://huggingface.co/Qwen/QwQ-32B-GGUF) and copy it into each container:
+2. Download the model file [`qwq-32b-q4_k_m.gguf`](https://huggingface.co/Qwen/QwQ-32B-GGUF) and copy it into each container:
 
 ```shell
 cd prima.cpp/download
@@ -248,7 +248,7 @@ sudo docker cp qwq-32b-q4_k_m.gguf prima-v3:/root/prima.cpp/download/
 sudo docker cp qwq-32b-q4_k_m.gguf prima-v4:/root/prima.cpp/download/
 ```
 
-1. Enter each container and build prima.cpp:
+3. Enter each container and build prima.cpp:
 
 ```shell
 cd /root/prima.cpp
