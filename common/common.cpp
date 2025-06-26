@@ -1443,10 +1443,16 @@ static bool assign_layers_to_device(
         }
 
         // check the solution
-        bool has_free_gpu_memory = false, has_gpu_overload = false, has_cpu_overload = false;
+        bool has_free_gpu_memory = false, has_gpu_overload = false, has_cpu_overload = false, has_weak_device = false;
         for (uint32_t m = 0; m < n_world; ++m) {
             // if (!dev_gpu[m]) continue;
             uint32_t w_m = best_solution[m], n_m = best_solution[m + n_world];
+
+            if (w_m == 1 && n_m == 0) {
+                // if the device is weak
+                has_weak_device = true;
+                LOG_INF("Device %d is weak, need to be removed: w_m = %d, n_m = %d\n", m, w_m, n_m);
+            }
 
             if (dev_gpu[m]) {
                 if (n_m < static_cast<uint32_t>(std::floor(W * vec_z_gpu[m]))) {
@@ -1467,7 +1473,7 @@ static bool assign_layers_to_device(
             }
         }
 
-        if (has_free_gpu_memory && (has_gpu_overload || has_cpu_overload)) {
+        if (!has_weak_device && has_free_gpu_memory && (has_gpu_overload || has_cpu_overload)) {
             int worst_device = -1;
             float worst_speed = std::numeric_limits<float>::max();
 
