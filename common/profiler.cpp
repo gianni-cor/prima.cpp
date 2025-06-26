@@ -2837,7 +2837,7 @@ size_t deserialize(const char * buffer, struct device_info * dev_info) {
     return ptr - buffer;
 }
 
-void TopoRebuildHelperInfo::deserialize(const char *buffer) {
+void TopoRebuildHelperInfo::deserialize(const char * buffer) {
     size_t buffer_size = ::deserialize(buffer, &dev_info);
     if (buffer_size == 0) {
         LOG_ERR("%s: failed to deserialize device info\n", __func__);
@@ -2846,14 +2846,16 @@ void TopoRebuildHelperInfo::deserialize(const char *buffer) {
     memcpy(&is_forwarder, buffer + buffer_size, 1);
 }
 
-size_t TopoRebuildHelperInfo::serialize(char **buffer) const{ 
+size_t TopoRebuildHelperInfo::serialize(char ** buffer) const{ 
     size_t buffer_size = ::serialize(&dev_info, buffer);
-    char* buffer_ = (char*)malloc(buffer_size+1);
+    char * buffer_ = (char *)malloc(buffer_size + 1);
+
     if (buffer_ == NULL) {
         LOG_ERR("%s: failed to allocate %zu bytes for device info serialization\n", 
                 __func__, buffer_size);
         return 0;
     }
+    
     memcpy(buffer_, *buffer, buffer_size);
     memcpy(buffer_ + buffer_size, &is_forwarder, 1);
     free(*buffer);
