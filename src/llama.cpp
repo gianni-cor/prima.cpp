@@ -21365,8 +21365,6 @@ void * llama_context_setup_backend(
                         || model->n_gpu_layers == 0) {
                     continue;
                 }
-#elif defined(GGML_USE_METAL)
-
 #endif
 
                 ok = ok & ggml_backend_sched_reserve(ctx->sched[i], gf[i]);
@@ -21933,10 +21931,10 @@ void llama_model_compute_buf_size(
     const int64_t n_result   = hparams.n_vocab * cparams.n_ubatch;
 
     // weights
-    const int64_t nb_output_w    = n_bytes.nb_output_w;
     const int64_t nb_attn_norm_w = n_bytes.nb_attn_norm_w;
     const int64_t nb_attn_q_w    = n_bytes.nb_attn_q_w;
-
+    // const int64_t nb_output_w    = n_bytes.nb_output_w;
+    
     // format bytes
     const int64_t type_size_f32 = ggml_type_size(GGML_TYPE_F32);
     const int64_t type_size_f16 = ggml_type_size(GGML_TYPE_F16);
