@@ -20976,7 +20976,7 @@ void * llama_context_setup_backend(
     auto       & cparams = ctx->cparams;
 
     std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), cparams.n_layer_window);
-    cparams.prefetch           = params.prefetch;
+    cparams.prefetch         = params.prefetch;
     cparams.n_seq_max        = std::max(1u, params.n_seq_max);
     cparams.n_threads        = params.n_threads;
     cparams.n_threads_batch  = params.n_threads_batch;
@@ -21359,6 +21359,16 @@ void * llama_context_setup_backend(
             bool ok = true;
             GGML_ASSERT(ctx->sched.size() == gf.size());
             for (size_t i = 0; i < gf.size(); ++i) {
+
+#if defined(GGML_USE_CUDA)
+                if ((cparams.rank == 0 && (i == 0 || i == gf.size() - 1)) 
+                        || model->n_gpu_layers == 0) {
+                    continue;
+                }
+#elif defined(GGML_USE_METAL)
+
+#endif
+
                 ok = ok & ggml_backend_sched_reserve(ctx->sched[i], gf[i]);
             }
             if (!ok) {
@@ -21963,7 +21973,8 @@ void llama_model_compute_buf_size(
                     (n_inp_pos + n_kq_mask) * type_size_f32 + n_v * type_size_f16 + nb_attn_norm_w,
                 });
             }
-            *gpu_buf     += (n_out_embd + n_result) * type_size_f32 + nb_output_w;
+            // we run the output layer on CPU by default
+            // *gpu_buf     += (n_out_embd + n_result) * type_size_f32 + nb_output_w;
             gpu_host_buf  = (n_inp_toks + n_inp_embd + n_bak_embd + n_inp_pos + n_kq_mask + n_inp_out_ids + n_out_embd) * type_size_f32;
         } else {
             if (has_gpu_layers) {
@@ -22036,7 +22047,7 @@ void llama_model_compute_buf_size(
 
     LLAMA_LOG_INFO("\n");
     LLAMA_LOG_INFO("%s: here the compute buffer size is a predicted upper bound, not an exact value\n", __func__);
-    LLAMA_LOG_INFO("%s: (rank %d) compute buffer size = %7.2f MiB (GPU) + %7.2f MiB (CPU / GPU-host buffer)\n", __func__,
+    LLAMA_LOG_INFO("%s: (rank %d) compute buffer size = %7.2f MiB (GPU) + %7.2f MiB (CPU & GPU-host buffer)\n", __func__,
             my_rank, *gpu_buf / (1024.0 * 1024.0), *cpu_buf / (1024.0 * 1024.0));
     
     if (backend == BACKEND_CUDA) {
