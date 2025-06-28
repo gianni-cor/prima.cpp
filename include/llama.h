@@ -325,6 +325,7 @@ extern "C" {
         bool use_mlock;     // force system to keep model in RAM
         bool check_tensors; // validate model tensor data
         bool keep_out_in_metal; // whether to keep output weights in metal memory
+        bool keep_out_in_cuda;  // whether to run the output layer on CUDA
     };
 
     // NOTE: changing the default values of parameters marked as [EXPERIMENTAL] may cause crashes or incorrect results in certain configurations
@@ -339,6 +340,7 @@ extern "C" {
         bool        force;             // force to start prefetching after computation
         float       master_priority;   // priority to assign workload to the master (set 1.01 to use master first, and 0.99 to offload to other devices)
         bool        keep_out_in_metal; // whether to keep output weights in metal memory
+        bool        keep_out_in_cuda;  // whether to run the output layer on CUDA
         char *      master_ip;         // ip address of the master node
         char *      next_node_ip;      // ip address of the next node
         uint32_t    data_port;         // data port for distributed inference

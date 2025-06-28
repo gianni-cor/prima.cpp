@@ -151,6 +151,7 @@ struct gpt_params {
     uint32_t signal_port          =  10000; // signal port for distributed inference
     bool    prefetch              = false; // prefetch layer weights
     bool    keep_out_in_metal     =  true; // whether to keep output weights in metal memory, true by default
+    bool    keep_out_in_cuda      = false; // whether to run the output layer on CUDA, false by default
     bool    force                 = false; // force to start prefetching after computation
     float   master_priority       =  1.01; // priority to assign workload to the master (set 1.01 to use master first, and 0.99 to offload to other devices)
     int32_t gpu_mem               = 999.0; // gpu memory to use, in GiB

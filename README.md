@@ -226,6 +226,8 @@ Take QwQ-32B as an example, run the following commands on the devices to launch 
 
 Once started, prima.cpp will profile each device and decide how much workload to assign, e.g., how many model layers each device should handle, and how many of them should run on GPU (if available).
 
+> By default, the output layer runs on the CPU. However, if you have enough total VRAM, add `--keep-out-in-cuda` to the master to run it on the GPU.
+
 ### (Optional) Run with Prebuilt Docker Image
 Assume we have a host machine with at least 32 CPU cores, 32 GiB RAM, and 32 GiB VRAM. We simulate 4 homogeneous nodes using Docker containers, with each node allocated 8 CPU cores, 8 GiB RAM, and 8 GiB VRAM. Follow the below steps to get started:
 

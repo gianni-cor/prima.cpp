@@ -7562,6 +7562,7 @@ static bool llm_load_tensors_impl(
         int                     main_gpu,
         bool                    use_mlock,
         bool                    keep_out_in_metal,
+        bool                    keep_out_in_cuda,
         llama_progress_callback progress_callback,
         void                  * progress_callback_user_data) {
     auto & hparams = model.hparams;
@@ -7606,9 +7607,15 @@ static bool llm_load_tensors_impl(
     // assign the input and output layers on CPU by default
     if (my_rank == 0) {
         model.buft_input  = llama_default_buffer_type_cpu(model, true);
-        model.buft_output = llama_default_buffer_type_cpu(model, true);
         LLAMA_LOG_DEBUG("Layer input assigned to cpu\n");
-        LLAMA_LOG_DEBUG("Layer output assigned to cpu\n");
+
+        if (keep_out_in_cuda) {
+            model.buft_output = llama_default_buffer_type_offload(model, main_gpu);
+            LLAMA_LOG_DEBUG("Layer output assigned to gpu\n");
+        } else {
+            model.buft_output = llama_default_buffer_type_cpu(model, true);
+            LLAMA_LOG_DEBUG("Layer output assigned to cpu\n");
+        }
     }
 
     // count used buffer types
@@ -9535,7 +9542,8 @@ int llm_load_tensors(
     try {
         if (!llm_load_tensors_impl(
             *ml, *model, params.n_world, params.rank, params.n_layer_window, params.n_gpu_layers, params.split_mode, 
-            params.main_gpu, params.use_mlock, params.keep_out_in_metal, params.progress_callback, params.progress_callback_user_data
+            params.main_gpu, params.use_mlock, params.keep_out_in_metal, params.keep_out_in_cuda, params.progress_callback, 
+            params.progress_callback_user_data
         )) {
             return -2;
         }
@@ -20247,6 +20255,7 @@ struct llama_model_params llama_model_default_params() {
         /*.use_mlock                   =*/ false,
         /*.check_tensors               =*/ false,
         /*.keep_out_in_metal           =*/ true,
+        /*.keep_out_in_cuda            =*/ false,
     };
 
 #ifdef GGML_USE_METAL
@@ -20268,6 +20277,7 @@ struct llama_context_params llama_context_default_params() {
         /*.force                       =*/ false,
         /*.master_priority             =*/ 1.01,
         /*.keep_out_in_metal           =*/ true,
+        /*.keep_out_in_cuda            =*/ false,
         /*.master_ip                   =*/ nullptr,
         /*.next_node_ip                =*/ nullptr,
         /*.data_port                   =*/ 9000,
@@ -21361,14 +21371,31 @@ void * llama_context_setup_backend(
             for (size_t i = 0; i < gf.size(); ++i) {
 
 #if defined(GGML_USE_CUDA)
-                if ((cparams.rank == 0 && (i == 0 || i == gf.size() - 1)) 
-                        || model->n_gpu_layers == 0) {
+                // output layer
+                if (!params.keep_out_in_cuda && cparams.rank == 0 && i == gf.size() - 1) {
+                    continue;
+                }
+
+                // input layer
+                if (cparams.rank == 0 && i == 0) {
+                    continue;
+                }
+
+                // ignore all backend layers if n_gpu_layers is 0
+                if (model->n_gpu_layers == 0) {
+                    continue;
+                }
+
+                // don't reserve for repeated backend layers
+                if ((cparams.rank == 0 && i > 1 && i < gf.size() - 1) 
+                    || (cparams.rank > 0 && i > 0)) {
                     continue;
                 }
 #endif
 
                 ok = ok & ggml_backend_sched_reserve(ctx->sched[i], gf[i]);
             }
+            
             if (!ok) {
                 LLAMA_LOG_ERROR("%s: failed to allocate compute buffers\n", __func__);
                 llama_free(ctx);
@@ -21933,7 +21960,7 @@ void llama_model_compute_buf_size(
     // weights
     const int64_t nb_attn_norm_w = n_bytes.nb_attn_norm_w;
     const int64_t nb_attn_q_w    = n_bytes.nb_attn_q_w;
-    // const int64_t nb_output_w    = n_bytes.nb_output_w;
+    const int64_t nb_output_w    = n_bytes.nb_output_w;
     
     // format bytes
     const int64_t type_size_f32 = ggml_type_size(GGML_TYPE_F32);
@@ -21972,7 +21999,9 @@ void llama_model_compute_buf_size(
                 });
             }
             // we run the output layer on CPU by default
-            // *gpu_buf     += (n_out_embd + n_result) * type_size_f32 + nb_output_w;
+            if (cparams.keep_out_in_cuda) { 
+                *gpu_buf += (n_out_embd + n_result) * type_size_f32 + nb_output_w;
+            }
             gpu_host_buf  = (n_inp_toks + n_inp_embd + n_bak_embd + n_inp_pos + n_kq_mask + n_inp_out_ids + n_out_embd) * type_size_f32;
         } else {
             if (has_gpu_layers) {

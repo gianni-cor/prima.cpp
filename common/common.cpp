@@ -2017,16 +2017,19 @@ struct llama_model_params llama_model_params_from_gpt_params(const gpt_params & 
     if (params.n_gpu_layers != -1) {
         mparams.n_gpu_layers = params.n_gpu_layers;
     }
-    mparams.n_world         = params.n_world;
-    mparams.rank            = params.rank;
-    mparams.rpc_servers     = params.rpc_servers.c_str();
-    mparams.main_gpu        = params.main_gpu;
-    mparams.split_mode      = params.split_mode;
-    mparams.tensor_split    = params.tensor_split;
-    mparams.use_mmap        = params.use_mmap;
-    mparams.use_mlock       = params.use_mlock;
-    mparams.check_tensors   = params.check_tensors;
+
+    mparams.n_world           = params.n_world;
+    mparams.rank              = params.rank;
+    mparams.rpc_servers       = params.rpc_servers.c_str();
+    mparams.main_gpu          = params.main_gpu;
+    mparams.split_mode        = params.split_mode;
+    mparams.tensor_split      = params.tensor_split;
+    mparams.use_mmap          = params.use_mmap;
+    mparams.use_mlock         = params.use_mlock;
+    mparams.check_tensors     = params.check_tensors;
     mparams.keep_out_in_metal = params.keep_out_in_metal;
+    mparams.keep_out_in_cuda  = params.keep_out_in_cuda;
+
     std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), mparams.n_layer_window);
     if (params.kv_overrides.empty()) {
         mparams.kv_overrides = NULL;
@@ -2068,6 +2071,7 @@ struct llama_context_params llama_context_params_from_gpt_params(const gpt_param
     cparams.force             = params.force;
     cparams.master_priority   = params.master_priority;
     cparams.keep_out_in_metal = params.keep_out_in_metal;
+    cparams.keep_out_in_cuda  = params.keep_out_in_cuda;
     cparams.n_gpu_layers      = params.n_gpu_layers;
     cparams.n_cycles          = params.n_cycles;
     std::copy(std::begin(params.n_layer_window), std::end(params.n_layer_window), cparams.n_layer_window);

@@ -775,6 +775,7 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
             params.master_priority = std::stof(value);
         }
     ).set_env("LLAMA_ARG_MASTER_PRIORITY"));
+
 // #ifdef GGML_USE_METAL
 //     // warn: if the output layer weights are not kept in metal shared memory, its mmap-ed weight data
 //     // could be released by the OS and reloaded repeatedly, which causes additional disk I/O latency.
@@ -787,6 +788,17 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
 //         }
 //     ).set_env("LLAMA_ARG_KEEP_INP_OUT_IN_METAL"));
 // #endif
+
+#ifdef GGML_USE_CUDA
+    add_opt(llama_arg(
+        {"--keep-out-in-cuda"},
+        format("whether to compute the output layer on CUDA (default: %s)", params.keep_out_in_cuda ? "true" : "false"),
+        [](gpt_params & params) {
+            params.keep_out_in_cuda = true;
+        }
+    ).set_env("LLAMA_ARG_KEEP_INP_OUT_IN_CUDA"));
+#endif
+
     add_opt(llama_arg(
         {"-n", "--predict", "--n-predict"}, "N",
         format("number of tokens to predict (default: %d, -1 = infinity, -2 = until context filled)", params.n_predict),
