@@ -169,7 +169,7 @@ int main(int argc, char ** argv) {
     const auto t_enc_end = ggml_time_us();
 
     // how many tokens to draft each time
-    int n_draft = params.n_draft;
+    int n_draft = params.speculative.n_max;
 
     int n_predict = 0;
     int n_drafted = 0;

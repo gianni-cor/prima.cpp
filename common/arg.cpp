@@ -627,12 +627,19 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
         }
     ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));
     add_opt(llama_arg(
-        {"--draft"}, "N",
-        format("number of tokens to draft for speculative decoding (default: %d)", params.n_draft),
+        {"--draft-max", "--draft", "--draft-n"}, "N",
+        format("number of tokens to draft for speculative decoding (default: %d)", params.speculative.n_max),
         [](gpt_params & params, int value) {
-            params.n_draft = value;
+            params.speculative.n_max = value;
         }
-    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_LOOKUP}));
+    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_LOOKUP, LLAMA_EXAMPLE_SERVER}));
+    add_opt(llama_arg(
+        {"--draft-min", "--draft-n-min"}, "N",
+        format("minimum number of draft tokens to use for speculative decoding (default: %d)", params.speculative.n_min),
+        [](gpt_params & params, int value) {
+            params.speculative.n_min = value;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_LOOKUP, LLAMA_EXAMPLE_SERVER}));
     add_opt(llama_arg(
         {"-ps", "--p-split"}, "N",
         format("speculative decoding split probability (default: %.1f)", (double)params.p_split),
@@ -640,6 +647,13 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
             params.p_split = std::stof(value);
         }
     ).set_examples({LLAMA_EXAMPLE_SPECULATIVE}));
+    add_opt(llama_arg(
+        {"--draft-p-min"}, "P",
+        format("minimum speculative decoding probability (greedy) (default: %.1f)", (double)params.speculative.p_min),
+        [](gpt_params & params, const std::string & value) {
+            params.speculative.p_min = std::stof(value);
+        }
+    ).set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER}));
     add_opt(llama_arg(
         {"-lcs", "--lookup-cache-static"}, "FNAME",
         "path to static lookup cache to use for lookup decoding (not updated by generation)",
