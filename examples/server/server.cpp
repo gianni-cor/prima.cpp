@@ -760,6 +760,8 @@ struct server_context {
                 llama_free      (llama_init_dft.context);
                 llama_free_model(llama_init_dft.model);
 
+                model_dft = nullptr;
+
                 return false;
             }
 
@@ -3566,6 +3568,8 @@ int main(int argc, char ** argv) {
     LOG_INF("%s: loading model\n", __func__);
 
     if (!ctx_server.load_model(params)) {
+        char * stop_signal = nullptr;
+        llama_free_sockets(ctx_server.ctx, &stop_signal);
         clean_up();
         t.join();
         LOG_ERR("%s: exiting due to model loading error\n", __func__);

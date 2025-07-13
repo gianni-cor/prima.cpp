@@ -673,6 +673,7 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
         format("size of the prompt context (default: %d, 0 = loaded from model)", params.n_ctx),
         [](gpt_params & params, int value) {
             params.n_ctx = value;
+            params.speculative.n_ctx = value;
         }
     ).set_env("LLAMA_ARG_CTX_SIZE"));
     add_opt(llama_arg(
