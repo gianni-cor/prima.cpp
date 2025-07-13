@@ -381,6 +381,7 @@ curl -X POST http://localhost:8080/v1/cancel \
 ```
 
 **9. How to use speculative decoding?**
+
 Please see "[Power prima.cpp with speculative decoding: Further speeds up by up to 80%](https://github.com/Lizonghang/prima.cpp/discussions/29)".
 
 ## ❤️ Acknowledgment

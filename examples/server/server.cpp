@@ -2542,7 +2542,7 @@ struct server_context {
                     llama_batch_add(slot.batch_spec, draft[i], slot.n_past + 1 + i, { slot.id + 1 }, true);
                 }
 
-                llama_decode(ctx, slot.batch_spec);
+                llama_decode(ctx, slot.batch_spec, true);
 
                 // the accepted tokens from the speculation
                 const auto ids = gpt_sampler_sample_and_accept_n(slot.smpl, ctx, draft);
