@@ -17878,7 +17878,7 @@ static void llama_send_meta(zmq::socket_t & socket, struct sync_meta * meta, boo
 
         if (meta->pos != nullptr) {
             send_msgs.emplace_back("pos", strlen("pos"));
-            send_msgs.emplace_back(meta->pos, meta->n_ctx * sizeof(llama_pos));
+            send_msgs.emplace_back(meta->pos, meta->n_tokens * sizeof(llama_pos));
         }
 
         if (meta->n_seq_id != nullptr) {
@@ -17986,8 +17986,8 @@ static int llama_recv_meta(zmq::socket_t & socket, struct sync_meta * meta) {
         }
 
         if (key == "pos") {
-            meta->pos = (llama_pos *) malloc(meta->n_ctx * sizeof(llama_pos));
-            std::memcpy(meta->pos, data_msg.data(), meta->n_ctx * sizeof(llama_pos));
+            meta->pos = (llama_pos *) malloc(meta->n_tokens * sizeof(llama_pos));
+            std::memcpy(meta->pos, data_msg.data(), meta->n_tokens * sizeof(llama_pos));
         }
 
         if (key == "n_seq_id") {
@@ -18304,8 +18304,8 @@ static int llama_decode_internal(
         if (meta.n_tokens > 0) {
             batch_all.n_tokens = meta.n_tokens;
             if (meta.pos != nullptr) {
-                batch_all.pos = (llama_pos *) malloc(meta.n_ctx * sizeof(llama_pos));
-                std::memcpy(batch_all.pos, meta.pos, meta.n_ctx * sizeof(llama_pos));
+                batch_all.pos = (llama_pos *) malloc(meta.n_tokens * sizeof(llama_pos));
+                std::memcpy(batch_all.pos, meta.pos, meta.n_tokens * sizeof(llama_pos));
             }
             if (meta.n_seq_id != nullptr) {
                 batch_all.n_seq_id = (int32_t *) malloc(meta.n_tokens * sizeof(int32_t));
@@ -20944,6 +20944,12 @@ struct llama_context * llama_new_context_with_model(
     ctx->cparams.rank    = params.rank;
     ctx->cparams.force   = params.force;
     ctx->cparams.original_next_rank = (params.rank + 1) % params.n_world;
+    
+    auto &hparams = model->hparams;
+    auto &cparams = ctx->cparams;
+    cparams.n_ctx            = params.n_ctx           == 0    ? hparams.n_ctx_train           : params.n_ctx;
+    ctx->logits_all = params.logits_all;
+
     return ctx;
 }
 
@@ -22083,6 +22089,9 @@ void llama_model_compute_buf_size(
         // this value may vary by GPU and CUDA version, but it's lower than 400 MiB in most cases,
         // another 300 MiB is used to prevent accidental OOM.
         *gpu_buf += 700 * 1024 * 1024;
+    } else if (backend == BACKEND_METAL) {
+        // 300 MiB is used to prevent accidental OOM, e.g., automatic quantization conversion.
+        *gpu_buf += 300 * 1024 * 1024;
     }
 }
 
