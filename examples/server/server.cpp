@@ -1013,7 +1013,7 @@ struct server_context {
         slot.sparams.mirostat_tau      = json_value(data, "mirostat_tau",      default_sparams.mirostat_tau);
         slot.sparams.mirostat_eta      = json_value(data, "mirostat_eta",      default_sparams.mirostat_eta);
         slot.sparams.penalize_nl       = json_value(data, "penalize_nl",       default_sparams.penalize_nl);
-        slot.params.n_keep             = json_value(data, "n_keep",            slot.params.n_keep);
+        slot.params.n_keep             = json_value(data, "n_keep",            params.n_keep);
         slot.params.n_discard          = json_value(data, "n_discard",         default_params.n_discard);
         slot.sparams.seed              = json_value(data, "seed",              default_sparams.seed);
         slot.sparams.n_probs           = json_value(data, "n_probs",           default_sparams.n_probs);
@@ -1215,7 +1215,8 @@ struct server_context {
 
             // assign the system KV cache to all parallel sequences
             for (int32_t i = 1; i <= params.n_parallel; ++i) {
-                llama_kv_cache_seq_cp(ctx, 0, i, -1, -1);
+                llama_kv_cache_seq_cp     (ctx, 0, i,     -1, -1);
+                llama_send_kv_cache_seq_cp(ctx, 0, i - 1, -1, -1);
             }
         }
 
@@ -2029,7 +2030,6 @@ struct server_context {
         }
 
         // apply context-shift if needed
-        // TODO: simplify and improve
         for (server_slot & slot : slots) {
             if (slot.ga_n == 1) {
                 if (slot.is_processing() && (int) system_tokens.size() + slot.n_past >= slot.n_ctx - 1) {
@@ -2204,14 +2204,14 @@ struct server_context {
                         } else {
                             if (!params.ctx_shift) {
                                 // if context shift is disabled, we make sure prompt size is smaller than KV size
-                                if ((int) system_tokens.size() + slot.n_prompt_tokens >= slot.n_ctx) {
+                                if ((int)system_tokens.size() + slot.n_prompt_tokens >= slot.n_ctx) {
                                     slot.release();
                                     send_error(slot, "the request exceeds the available context size. try increasing the context size or enable context shift", ERROR_TYPE_INVALID_REQUEST);
                                     continue;
                                 }
                             }
                             if (slot.params.n_keep < 0) {
-                                slot.params.n_keep = slot.n_prompt_tokens;
+                                slot.params.n_keep = (int)system_tokens.size() + slot.n_prompt_tokens + 3; // +3 for <think> tag
                             }
                             slot.params.n_keep = std::min(slot.n_ctx - 4, slot.params.n_keep);
 
@@ -3590,7 +3590,7 @@ int main(int argc, char ** argv) {
     }
 
     // print sample chat example to make it clear which template is used
-    LOG_INF("%s: chat template, built_in: %d, chat_example: '%s'\n", __func__, params.chat_template.empty(), llama_chat_format_example(ctx_server.model, params.chat_template).c_str());
+    // LOG_INF("%s: chat template, built_in: %d, chat_example: '%s'\n", __func__, params.chat_template.empty(), llama_chat_format_example(ctx_server.model, params.chat_template).c_str());
 
     ctx_server.queue_tasks.on_new_task(std::bind(
                 &server_context::process_single_task, &ctx_server, std::placeholders::_1));

@@ -19108,19 +19108,19 @@ static void llama_kv_cache_update_internal(struct llama_context & lctx) {
             GGML_ABORT("Deepseek2 does not support K-shift");
         }
 
-        for (size_t i = 0; i < lctx.sched.size(); ++i) {
-            ggml_backend_sched_reset(lctx.sched[i]);
+        auto * sched = lctx.sched.at(0);
 
-            ggml_cgraph * gf = llama_build_graph_k_shift(lctx);
+        ggml_backend_sched_reset(sched);
 
-            ggml_backend_sched_alloc_graph(lctx.sched[i], gf);
+        ggml_cgraph * gf = llama_build_graph_k_shift(lctx);
 
-            llama_set_k_shift(lctx);
+        ggml_backend_sched_alloc_graph(sched, gf);
 
-            llama_graph_compute(lctx, gf, lctx.sched[i], lctx.cparams.n_threads, lctx.threadpool);
+        llama_set_k_shift(lctx);
 
-            need_reserve = true;
-        }
+        llama_graph_compute(lctx, gf, sched, lctx.cparams.n_threads, lctx.threadpool);
+        
+        need_reserve = true;
 
         {
             auto & kv_self = lctx.kv_self;

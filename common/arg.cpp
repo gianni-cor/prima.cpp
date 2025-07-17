@@ -2038,6 +2038,13 @@ gpt_params_context gpt_params_parser_init(gpt_params & params, llama_example ex,
         }
     ).set_examples({LLAMA_EXAMPLE_MAIN, LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_CHAT_TEMPLATE"));
     add_opt(llama_arg(
+        {"-sys", "--system-prompt"}, "PROMPT",
+        "system prompt to use with model (if applicable, depending on chat template)",
+        [](gpt_params & params, const std::string & value) {
+            params.system_prompt = value;
+        }
+    ).set_examples({LLAMA_EXAMPLE_MAIN, LLAMA_EXAMPLE_SERVER}).set_env("LLAMA_ARG_SYSTEM_PROMPT"));
+    add_opt(llama_arg(
         {"-sps", "--slot-prompt-similarity"}, "SIMILARITY",
         format("how much the prompt of a request must match the prompt of a slot in order to use that slot (default: %.2f, 0.0 = disabled)\n", params.slot_prompt_similarity),
         [](gpt_params & params, const std::string & value) {
